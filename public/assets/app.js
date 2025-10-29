@@ -1,11 +1,11 @@
+// Patch assets/app.js to use /lyrics/find.php and karaoke render
+import { parseLRC } from '/assets/lrc.js';
+
 async function checkAuth() {
-  const r = await fetch('/oauth/token.php', { credentials: 'include' });
-  if (r.status !== 200) {
-    document.getElementById('connect').style.display = 'inline-block';
-    return false;
-  }
-  document.getElementById('connect').style.display = 'none';
-  return true;
+  const r = await fetch('/api/session/status.php', { credentials: 'include' });
+  const j = r.ok ? await r.json() : { authenticated:false };
+  document.getElementById('connect').style.display = j.authenticated ? 'none' : 'inline-block';
+  return j.authenticated;
 }
 
 async function refreshToken() {
@@ -19,12 +19,11 @@ async function getCurrentlyPlaying() {
   return await r.json();
 }
 
-async function loadLyrics(artist, title) {
+async function findLyrics(artist, title) {
   const q = new URLSearchParams({ artist, title });
-  const r = await fetch('/lyrics/fetch.php?' + q.toString(), { credentials: 'include' });
-  if (!r.ok) return 'Lyrics unavailable.';
-  const data = await r.json();
-  return data.lyrics || 'Lyrics unavailable.';
+  const r = await fetch('/lyrics/find.php?' + q.toString(), { credentials: 'include' });
+  if (!r.ok) return { synced:false, text:'' };
+  return await r.json();
 }
 
 function renderTrack(info) {
@@ -46,6 +45,23 @@ function renderTrack(info) {
   if (img) cover.src = img;
 }
 
+function renderLyrics(payload, progressMs){
+  const el = document.getElementById('lyrics-text');
+  if (!payload) { el.textContent = 'Lyrics unavailable.'; return; }
+  if (!payload.synced) { el.textContent = payload.text || 'Lyrics unavailable.'; return; }
+  const lines = payload.lines || [];
+  if (!lines.length) { el.textContent = 'Lyrics unavailable.'; return; }
+  // choose current line by progressMs
+  let i = 0;
+  for (let k=0;k<lines.length;k++){ if (lines[k].t <= progressMs) i = k; else break; }
+  // build a small window around current
+  const start = Math.max(0, i-3);
+  const end   = Math.min(lines.length, i+4);
+  const view  = lines.slice(start, end).map((ln,idx)=> (start+idx===i? '> ' : '  ') + ln.text).join('
+');
+  el.textContent = view;
+}
+
 async function tick() {
   const ok = await checkAuth();
   if (!ok) return;
@@ -54,8 +70,9 @@ async function tick() {
   if (info && info.item) {
     const artist = (info.item.artists || []).map(a => a.name).join(', ');
     const title  = info.item.name || '';
-    const text   = await loadLyrics(artist, title);
-    document.getElementById('lyrics-text').textContent = text;
+    const lyr    = await findLyrics(artist, title);
+    const progress = (info.progress_ms || 0);
+    renderLyrics(lyr, progress);
   }
 }
 
@@ -68,6 +85,6 @@ document.getElementById('refresh').addEventListener('click', async () => {
   await tick();
 });
 
-// run immediately and then every 10s
+// run immediately and then every 5s
 tick();
-setInterval(tick, 10000);
+setInterval(tick, 5000);
