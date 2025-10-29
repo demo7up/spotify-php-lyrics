@@ -1,0 +1,14 @@
+# Force HTTPS (Apache/cPanel SSL termination)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Optional: cache static assets
+<FilesMatch "\.(js|css|png|jpg|svg|woff2?)$">
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# Deny direct access to config.php if placed in webroot (we keep it in /oauth)
+<Files "config.php">
+  Require all denied
+</Files>
